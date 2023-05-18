@@ -78,3 +78,13 @@ and verify it is of the correct type. So, do not treat metadata.csv as decoratio
 12. SQLTerm is a class with 4 attributes: String _strTableName, String _strColumnName, String _strOperator and Object _objValue
 13. Iterator is java.util.Iterator It is an interface that enables client code to iterate over the results row by row. Whatever object you return holding the result set, it should implement the Iterator interface.
 14.You should check on the passed types and do not just accept any type – otherwise, your code will crash with invalid input. 
+*Your main class should be called DBApp.java and should have the following seven methods with the signature as specified. The parameters names are written using Hungarian notation
+```
+public void init( ); 
+public void createTable(String strTableName, String strClusteringKeyColumn, Hashtable<String,String> htblColNameType, Hashtable<String,String> htblColNameMin, Hashtable<String,String> htblColNameMax ) throws DBAppException(){}
+public void createIndex(String strTableName, String[] strarrColName) throws DBAppException(){}
+public void insertIntoTable(String strTableName, Hashtable<String,Object> htblColNameValue) throws DBAppException(){} 
+public void updateTable(String strTableName, String strClusteringKeyValue, Hashtable<String,Object> htblColNameValue ) throws DBAppException(){}
+public void deleteFromTable(String strTableName,Hashtable<String,Object> htblColNameValue) throws DBAppException(){}
+public Iterator selectFromTable(SQLTerm[] arrSQLTerms, String[] strarrOperators) throws DBAppException(){}
+```
