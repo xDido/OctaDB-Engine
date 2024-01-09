@@ -1,5 +1,4 @@
 # OctaDB Engine
-![alt text](https://docs-assets.developer.apple.com/published/183088f967/octree_2x_d5ec086e-6563-4f2b-99a2-4e1762919c72.png)
 # Overview
 In this project, you are going to build a small database engine with support for Octrees Indices. 
 The required functionalities are 
