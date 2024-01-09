@@ -1,4 +1,3 @@
-# OctaDB Engine
 # Overview
 In this project, you are going to build a small database engine with support for Octrees Indices. 
 The required functionalities are 
