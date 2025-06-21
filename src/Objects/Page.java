@@ -1,33 +1,42 @@
 package Objects;
 
-
 import Exceptions.DBAppException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import src.DBApp; // Assuming DBApp is in src package and contains the static compareToObject
+import src.DBConstants; // Import DBConstants
 
-import java.text.SimpleDateFormat;
-import java.util.Vector;
-import java.util.*;
 import java.io.*;
-import java.io.Serializable;
+import java.util.Hashtable;
+import java.util.Properties;
+import java.util.Vector;
 
 public class Page implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 180979049375953L;
+    private static final Logger logger = LoggerFactory.getLogger(Page.class);
+
     int MaxRows;
     Vector<Hashtable<String, Object>> Tuples;
 
     public Page() {
-
-        Tuples = new Vector<Hashtable<String, Object>>();
-        File configFile = new File("config/DBApp.config");
-        try {
-            FileReader reader = new FileReader(configFile);
+        Tuples = new Vector<>(); // Diamond operator
+        File configFile = new File(DBConstants.CONFIG_FILE_PATH);
+        try (FileReader reader = new FileReader(configFile)) {
             Properties props = new Properties();
             props.load(reader);
-            MaxRows = Integer.parseInt(props.getProperty("MaximumRowsCountinTablePage"));
-
+            MaxRows = Integer.parseInt(props.getProperty(DBConstants.CONFIG_MAX_ROWS_PER_PAGE));
+            logger.debug("Page initialized. MaxRows set to {} from config.", MaxRows);
+        } catch (FileNotFoundException e) {
+            logger.error("Configuration file '{}' not found.", DBConstants.CONFIG_FILE_PATH, e);
+            throw new RuntimeException("Configuration file '" + DBConstants.CONFIG_FILE_PATH + "' not found.", e);
         } catch (IOException e) {
-            System.out.println("Error: " + e.getMessage());
+            logger.error("IOException while reading or parsing '{}'.", DBConstants.CONFIG_FILE_PATH, e);
+            throw new RuntimeException("Error reading configuration file '" + DBConstants.CONFIG_FILE_PATH + "'.", e);
+        } catch (NumberFormatException e) {
+            logger.error("Invalid format for {} in '{}'.", DBConstants.CONFIG_MAX_ROWS_PER_PAGE, DBConstants.CONFIG_FILE_PATH, e);
+            throw new RuntimeException("Invalid number format for " + DBConstants.CONFIG_MAX_ROWS_PER_PAGE + " in config.", e);
         }
     }
 
@@ -43,120 +52,59 @@ public class Page implements Serializable {
         return Tuples;
     }
 
-    public static int compareToObject(Object Value, Object pageValue) throws DBAppException {
-        int r;
-        if (Value instanceof Integer) {
-            int a = (int) Value;
-            int b = (int) Integer.parseInt("" + pageValue);
-            r = Integer.compare(a, b);
-        } else if (Value instanceof Double) {
-            double a = (double) Value;
-            double b = Double.parseDouble((String) pageValue);
-            r = Double.compare(a, b);
-        } else if (Value.getClass().equals("java.lang.String")) {
-            r = ((String) Value).compareTo((String) pageValue);
-        } else { //date
-            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
-            try {
-                Date d1 = dateFormat.parse((String) Value);
-                Date d2 = dateFormat.parse((String) pageValue);
-                r = d1.compareTo(d2);
-            } catch (Exception e) {
-                throw new DBAppException("wrong date format");
+    // compareToObject method removed from here. DBApp.compareToObject should be used.
+
+    public int binarySearchForInsertionPoint(Hashtable<String, Object> tuple, String primaryKeyColumn) throws DBAppException {
+        logger.trace("Binary searching for insertion point for tuple with PK value: {} in a page with {} tuples.", tuple.get(primaryKeyColumn), Tuples.size());
+        Object primaryValueToInsert = tuple.get(primaryKeyColumn);
+        int low = 0;
+        int high = Tuples.size() - 1;
+        int insertionPoint = Tuples.size(); // Default to end if larger than all
+
+        while (low <= high) {
+            int mid = low + (high - low) / 2;
+            Object midTuplePrimaryValue = Tuples.get(mid).get(primaryKeyColumn);
+            int comparison = DBApp.compareToObject(primaryValueToInsert, midTuplePrimaryValue);
+
+            if (comparison == 0) {
+                logger.warn("Attempting to insert a tuple with a duplicate primary key value: {}. PK column: {}", primaryValueToInsert, primaryKeyColumn);
+                throw new DBAppException("Tuple with primary key " + primaryValueToInsert + " already exists in this page.");
+            }
+
+            if (comparison < 0) { // primaryValueToInsert < midTuplePrimaryValue
+                insertionPoint = mid; // Potential insertion point
+                high = mid - 1;
+            } else { // primaryValueToInsert > midTuplePrimaryValue
+                low = mid + 1;
             }
         }
-
-        return r;
-    } // Value>pageValue == positive
-
-    public int binaryOnTuples(Hashtable<String, Object> table, String primaryKey) throws DBAppException {
-        Object primary = table.get(primaryKey);
-        int l = 0;
-        int r = this.getTuples().size() - 1;
-        while (r - l > 1) {
-            int m = (l + r) / 2;
-            // Check if x is present at mid
-            if (compareToObject(primary, this.getTuples().get(m).get(primaryKey)) == 0)
-                throw new DBAppException("tuple exists");
-
-            // If x greater, ignore left half
-            if (compareToObject(primary, this.getTuples().get(m).get(primaryKey)) > 0) l = m;
-
-                // If x is smaller, ignore right half
-            else r = m;
-        }
-        if (r == this.getTuples().size() - 1) {
-            if (compareToObject(primary, this.getTuples().get(r).get(primaryKey)) == 0)
-                throw new DBAppException("tuple exists");
-            if (compareToObject(primary, this.getTuples().get(r).get(primaryKey)) > 0) r += 1;
-        }
-        if (l == 0) {
-            if (compareToObject(primary, this.getTuples().get(l).get(primaryKey)) == 0)
-                throw new DBAppException("tuple exists");
-            if (compareToObject(primary, this.getTuples().get(l).get(primaryKey)) < 0) r -= 1;
-
-        }
-        if(r==-1) r=0;
-        return r;
+        logger.trace("Binary search determined insertion point: {}", insertionPoint);
+        return insertionPoint;
     }
+
 
     public void addRow(Hashtable<String, Object> table, String PrimaryKey) throws DBAppException {
-        if (this.getTuples().size() == 0) {
+        logger.debug("Attempting to add row to page. Row: {}, PK: {}", table, PrimaryKey);
+        if (this.Tuples.isEmpty()) {
             this.Tuples.add(table);
+            logger.info("Added row to empty page. New size: 1. Row: {}", table);
             return;
         }
-        int i = binaryOnTuples(table, PrimaryKey);
 
+        int insertionIndex = binarySearchForInsertionPoint(table, PrimaryKey);
 
-        if (i >= this.getTuples().size())
-            this.Tuples.add(table);
-        else {
-            this.Tuples.add(i, table);
-
-        }
-
-
+        this.Tuples.add(insertionIndex, table);
+        logger.info("Added row at index {}. New page size: {}. Row: {}", insertionIndex, this.Tuples.size(), table);
     }
 
+    // serializePage method removed as DBApp.WritePage handles this.
 
-    public void serializePage(String tableName, int index) throws IOException{
-
-        FileOutputStream fileOut = new FileOutputStream("meta/" + tableName + index + ".class");
-        ObjectOutputStream out = new ObjectOutputStream(fileOut);
-        out.writeObject(this);
-        fileOut.close();
-        out.close();
-
+    @Override
+    public String toString() {
+        return "Page{" +
+                "MaxRows=" + MaxRows +
+                ", CurrentTuples=" + (Tuples != null ? Tuples.size() : "null") +
+                // Optionally, list some tuple summaries if not too verbose
+                '}';
     }
-
-//    public static void main(String[] args) throws DBAppException {
-//        Page x = new Page();
-//        Hashtable<String, Object> htblColNameValue = new Hashtable<String, Object>();
-//        htblColNameValue.put("Name", "Myriam");
-//        htblColNameValue.put("ID", 111);
-//
-//        Hashtable<String, Object> htblColNameValue2 = new Hashtable<String, Object>();
-//        htblColNameValue2.put("Name", "Ahmed");
-//        htblColNameValue2.put("ID", 11);
-//
-//        Hashtable<String, Object> htblColNameValue44 = new Hashtable<String, Object>();
-//        htblColNameValue44.put("Name", "rest");
-//        htblColNameValue44.put("ID", 30);
-//        Hashtable<String, Object> htblColNameValuelast = new Hashtable<String, Object>();
-//        htblColNameValuelast.put("Name", "last");
-//        htblColNameValuelast.put("ID", 800);
-//        Hashtable<String, Object> htblColNameValue11 = new Hashtable<String, Object>();
-//        htblColNameValue11.put("Name", "first");
-//        htblColNameValue11.put("ID", 1);
-//
-//        Hashtable<String, Object> htblColNameValue1 = new Hashtable<String, Object>();
-//        htblColNameValue1.put("Name", "Nada");
-//        htblColNameValue1.put("ID", 21);
-//        x.addRow(htblColNameValue1, "ID");x.addRow(htblColNameValue2, "ID");
-//        x.addRow(htblColNameValue, "ID");x.addRow(htblColNameValue44,"ID");
-//        x.addRow(htblColNameValue11,"ID");
-//        x.addRow(htblColNameValuelast,"ID");
-//        System.out.println(x.getTuples().get(1).get("ID"));
-//    }
-
 }
